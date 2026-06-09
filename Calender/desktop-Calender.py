@@ -7,6 +7,33 @@ from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 
+# ---------- سیستم اسکیل ریسپانسیو ----------
+def get_scale_factor():
+    """محاسبه ضریب اسکیل فقط بر اساس ارتفاع فیزیکی صفحه.
+    Qt خودش DPI scaling ویندوز رو هندل می‌کنه، پس ما نباید دوباره DPI رو حساب کنیم."""
+    app = QApplication.instance()
+    if not app:
+        return 1.0
+    screen = app.primaryScreen()
+    if not screen:
+        return 1.0
+    # از availableGeometry استفاده می‌کنیم که Qt قبلاً DPI-aware کردتش
+    height = screen.availableGeometry().height()
+    # 900px = مرجع (مانیتور ۲۲ اینچ معمولی)
+    # زیر 700: لپتاپ کوچیک → 0.78
+    # 700-850: لپتاپ ۱۵ اینچ → 0.85-0.95
+    # 850-1000: مانیتور معمولی → 1.0
+    # بالای 1000: مانیتور بزرگ → 1.1+
+    scale = height / 900.0
+    return max(0.72, min(1.25, scale))
+
+# متغیر گلوبال اسکیل - بعد از ساخت QApplication مقداردهی می‌شه
+_SCALE = 1.0
+
+def s(value):
+    """اسکیل کردن یک عدد (پیکسل، فونت‌سایز و غیره)"""
+    return int(value * _SCALE)
+
 # ---------- دیکشنری تعطیلات رسمی ----------
 HOLIDAYS = {
     "01-01": "عید نوروز - سال نو",
@@ -155,33 +182,34 @@ class TaskWidgetItem(QWidget):
         self.parent_list = parent
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(8)
+        layout.setContentsMargins(s(5), s(5), s(5), s(5))
+        layout.setSpacing(s(8))
         
         self.label = QLabel(task_text)
         if parent and hasattr(parent, 'persian_font'):
             self.label.setFont(parent.persian_font)
-        self.label.setStyleSheet("color: white; font-size: 12px; font-weight: 500;")
+        self.label.setStyleSheet(f"color: white; font-size: {s(12)}px; font-weight: 500;")
         if status == 1:
             font = self.label.font()
             font.setStrikeOut(True)
             self.label.setFont(font)
-            self.label.setStyleSheet("color: #888888; font-size: 12px; font-weight: 500;")
+            self.label.setStyleSheet(f"color: #888888; font-size: {s(12)}px; font-weight: 500;")
         
         delete_btn = QPushButton("✖")
-        delete_btn.setFixedSize(22, 22)
+        delete_btn.setFixedSize(s(22), s(22))
         delete_btn.setFont(self.label.font())
-        delete_btn.setStyleSheet("""
-            QPushButton {
+        r = s(11)
+        delete_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #ff4757;
                 color: white;
-                border-radius: 11px;
-                font-size: 10px;
+                border-radius: {r}px;
+                font-size: {s(10)}px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #ff6b81;
-            }
+            }}
         """)
         delete_btn.clicked.connect(self.delete_task)
         
@@ -222,7 +250,7 @@ class TaskListWidget(QListWidget):
         tasks = self.db.get_tasks(self.date_str)
         for task_id, text, status in tasks:
             item = QListWidgetItem()
-            item.setSizeHint(QSize(0, 35))
+            item.setSizeHint(QSize(0, s(35)))
             widget = TaskWidgetItem(task_id, text, status, self)
             self.addItem(item)
             self.setItemWidget(item, widget)
@@ -246,48 +274,96 @@ class CalendarWidget(QWidget):
 
     def initUI(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        layout.setContentsMargins(s(5), s(5), s(5), s(5))
+        layout.setSpacing(s(5))
 
         control_bar = QHBoxLayout()
         
-        self.today_btn = QPushButton("امروز")
-        self.today_btn.setFixedHeight(28)
+        self.today_btn = QPushButton("امروز 📍")
+        self.today_btn.setFixedHeight(s(28))
+        self.today_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255,255,255,20);
+                color: white;
+                border: 1px solid rgba(255,255,255,60);
+                border-radius: {s(6)}px;
+                font-size: {s(11)}px;
+                padding: 0 {s(8)}px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(0,229,255,40);
+                border-color: #00E5FF;
+                color: #00E5FF;
+            }}
+        """)
+        # force رنگ سفید حتی اگه تم سیستم override کنه
+        palette = self.today_btn.palette()
+        palette.setColor(QPalette.ButtonText, QColor("white"))
+        self.today_btn.setPalette(palette)
         self.today_btn.clicked.connect(self.go_to_today)
         control_bar.addWidget(self.today_btn)
         control_bar.addStretch()
-        
+
+        nav_btn_style = f"""
+            QPushButton {{
+                background-color: rgba(255,255,255,15);
+                color: white;
+                border: 1px solid rgba(255,255,255,40);
+                border-radius: {s(5)}px;
+                font-size: {s(12)}px;
+                min-width: {s(24)}px;
+                min-height: {s(24)}px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(0,229,255,40);
+                color: #00E5FF;
+            }}
+        """
+
         self.prev_month_btn = QPushButton("▶")
+        self.prev_month_btn.setStyleSheet(nav_btn_style)
         self.prev_month_btn.clicked.connect(self.prev_month)
+        p = self.prev_month_btn.palette()
+        p.setColor(QPalette.ButtonText, QColor("white"))
+        self.prev_month_btn.setPalette(p)
         control_bar.addWidget(self.prev_month_btn)
-        
+
         self.month_label = QLabel()
         self.month_label.setAlignment(Qt.AlignCenter)
+        self.month_label.setStyleSheet(f"color: white; font-size: {s(12)}px; font-weight: bold; min-width: {s(80)}px;")
+        p2 = self.month_label.palette()
+        p2.setColor(QPalette.WindowText, QColor("white"))
+        self.month_label.setPalette(p2)
         control_bar.addWidget(self.month_label)
-        
+
         self.next_month_btn = QPushButton("◀")
+        self.next_month_btn.setStyleSheet(nav_btn_style)
         self.next_month_btn.clicked.connect(self.next_month)
+        p3 = self.next_month_btn.palette()
+        p3.setColor(QPalette.ButtonText, QColor("white"))
+        self.next_month_btn.setPalette(p3)
         control_bar.addWidget(self.next_month_btn)
         
         layout.addLayout(control_bar)
 
         week_layout = QHBoxLayout()
-        week_layout.setSpacing(8)
+        week_layout.setSpacing(4)
+        week_layout.setContentsMargins(s(5), 0, s(5), 0)
         week_days = ["جمعه", "پنجشنبه", "چهارشنبه", "سه‌شنبه", "دوشنبه", "یکشنبه", "شنبه"]
         for day in week_days:
             lbl = QLabel(day)
             lbl.setAlignment(Qt.AlignCenter)
             if day == "جمعه":
-                lbl.setStyleSheet("color: #ff6b6b; font-size: 10px; font-weight: bold;")
+                lbl.setStyleSheet(f"color: #ff6b6b; font-size: {s(10)}px; font-weight: bold;")
             else:
-                lbl.setStyleSheet("color: #00E5FF; font-size: 10px; font-weight: bold;")
+                lbl.setStyleSheet(f"color: #00E5FF; font-size: {s(10)}px; font-weight: bold;")
             week_layout.addWidget(lbl)
         layout.addLayout(week_layout)
 
         self.day_grid_layout = QGridLayout()
-        self.day_grid_layout.setHorizontalSpacing(15)
-        self.day_grid_layout.setVerticalSpacing(15)
-        self.day_grid_layout.setContentsMargins(10, 10, 10, 10)
+        self.day_grid_layout.setHorizontalSpacing(4)
+        self.day_grid_layout.setVerticalSpacing(4)
+        self.day_grid_layout.setContentsMargins(s(5), s(5), s(5), s(5))
         layout.addLayout(self.day_grid_layout)
 
     def go_to_today(self):
@@ -328,10 +404,20 @@ class CalendarWidget(QWidget):
 
         day = 1
 
+        # اندازه دکمه رو از عرض پنجره حساب می‌کنیم
+        # عرض window منهای margin ها تقسیم بر ۷ ستون
+        try:
+            win = self.window()
+            available_w = win.width() - s(50)
+        except Exception:
+            available_w = 300
+        cell_w = max(s(26), (available_w - 4 * 6) // 7)
+        cell_h = max(s(26), int(cell_w * 0.85))
+
         for row in range(rows_needed):
             for col in range(7):
                 btn = QPushButton()
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                btn.setFixedSize(cell_w, cell_h)
                 
                 if row == 0 and col < start_weekday:
                     btn.setEnabled(False)
@@ -344,52 +430,58 @@ class CalendarWidget(QWidget):
                     btn.clicked.connect(self.make_handler(date_str))
                     
                     current_jd = jdatetime.date(year, month, day)
+                    r = max(4, cell_h // 5)
+                    fs = max(9, cell_h // 3)
                     
                     if current_jd == jdatetime.date.today():
-                        btn.setStyleSheet("""
-                            QPushButton {
+                        btn.setStyleSheet(f"""
+                            QPushButton {{
                                 background-color: rgba(0,229,255,40);
                                 color: #00E5FF;
-                                border-radius: 6px;
+                                border-radius: {r}px;
                                 font-weight: bold;
+                                font-size: {fs}px;
                                 border: 1px solid #00E5FF;
-                            }
-                            QPushButton:hover {
+                            }}
+                            QPushButton:hover {{
                                 background-color: rgba(0,229,255,60);
-                            }
+                            }}
                         """)
                     elif current_jd == self.selected_jdate:
-                        btn.setStyleSheet("""
-                            QPushButton {
+                        btn.setStyleSheet(f"""
+                            QPushButton {{
                                 background-color: #00E5FF;
                                 color: #1a1a2e;
-                                border-radius: 6px;
+                                border-radius: {r}px;
                                 font-weight: bold;
-                            }
+                                font-size: {fs}px;
+                            }}
                         """)
                     elif is_holiday(year, month, day):
-                        btn.setStyleSheet("""
-                            QPushButton {
+                        btn.setStyleSheet(f"""
+                            QPushButton {{
                                 background-color: rgba(0,0,0,60);
                                 color: #ff6b6b;
-                                border-radius: 6px;
+                                border-radius: {r}px;
                                 font-weight: bold;
-                            }
-                            QPushButton:hover {
+                                font-size: {fs}px;
+                            }}
+                            QPushButton:hover {{
                                 background-color: rgba(255,107,107,30);
-                            }
+                            }}
                         """)
                     else:
-                        btn.setStyleSheet("""
-                            QPushButton {
+                        btn.setStyleSheet(f"""
+                            QPushButton {{
                                 background-color: rgba(0,0,0,60);
                                 color: white;
-                                border-radius: 6px;
+                                border-radius: {r}px;
                                 font-weight: bold;
-                            }
-                            QPushButton:hover {
+                                font-size: {fs}px;
+                            }}
+                            QPushButton:hover {{
                                 background-color: rgba(0,229,255,30);
-                            }
+                            }}
                         """)
                     
                     if date_str in self.task_dates:
@@ -574,22 +666,19 @@ class MainWidget(QMainWindow):
         
         screen = QApplication.primaryScreen()
         if screen:
-            screen_height = screen.availableGeometry().height()
+            screen_rect = screen.availableGeometry()
+            screen_height = screen_rect.height()
+            screen_width = screen_rect.width()
         else:
             screen_height = 768
+            screen_width = 1366
         
-        if screen_height <= 800:
-            new_width = 520
-            new_height = 940
-        elif screen_height <= 1080:
-            new_width = 560
-            new_height = 1010
-        else:
-            new_width = 620
-            new_height = 1090
+        # پنجره تمام ارتفاع صفحه رو می‌گیره
+        new_width = max(320, min(520, int(screen_width * 0.30)))
+        new_height = screen_height  # تمام ارتفاع موجود
         
-        self.setMinimumSize(480, 780)
-        self.setMaximumSize(680, 1120)
+        self.setMinimumSize(300, 500)
+        self.setMaximumSize(560, screen_height)
         self.resize(new_width, new_height)
 
         shadow = QGraphicsDropShadowEffect()
@@ -616,31 +705,63 @@ class MainWidget(QMainWindow):
             font_id = QFontDatabase.addApplicationFont(font_path)
             if font_id != -1:
                 font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
-                self.persian_font = QFont(font_family, 11)
+                self.persian_font = QFont(font_family, s(11))
                 QApplication.setFont(self.persian_font)
             else:
-                self.persian_font = QFont("Segoe UI", 11)
+                self.persian_font = QFont("Segoe UI", s(11))
         else:
-            self.persian_font = QFont("Segoe UI", 11)
+            self.persian_font = QFont("Segoe UI", s(11))
 
         layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(15, 10, 15, 15)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ScrollArea برای اینکه روی صفحه‌های کوچیک هم همه المان‌ها نمایش داده بشن
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: rgba(255,255,255,10);
+                width: 4px;
+                border-radius: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(0,229,255,120);
+                border-radius: 2px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+        """)
+
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background: transparent;")
+        inner_layout = QVBoxLayout(scroll_content)
+        inner_layout.setContentsMargins(s(15), s(10), s(15), s(15))
+        inner_layout.setSpacing(s(8))
+
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+
+        # از این به بعد همه المان‌ها به inner_layout اضافه میشن
+        layout = inner_layout
 
         title_bar = QFrame()
-        title_bar.setFixedHeight(55)
+        title_bar.setFixedHeight(s(55))
         title_bar.setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
         title_layout = QHBoxLayout(title_bar)
-        title_layout.setContentsMargins(8, 0, 8, 0)
+        title_layout.setContentsMargins(s(8), 0, s(8), 0)
         logo_label = QLabel("🗓️")
-        logo_label.setFont(QFont("Segoe UI", 24))
+        logo_label.setFont(QFont("Segoe UI", s(22)))
         logo_label.setStyleSheet("color: #00E5FF;")
-        logo_label.setFixedSize(42, 42)
+        logo_label.setFixedSize(s(42), s(42))
         title_layout.addWidget(logo_label)
 
         app_name = QLabel("TaskCalendar")
         app_name.setFont(self.persian_font)
-        app_name.setStyleSheet("color: #FFFFFF; font-size: 14px; font-weight: bold;")
+        app_name.setStyleSheet(f"color: #FFFFFF; font-size: {s(14)}px; font-weight: bold;")
         title_layout.addWidget(app_name)
 
         title_layout.addStretch()
@@ -648,31 +769,31 @@ class MainWidget(QMainWindow):
         self.clock_label = QLabel()
         self.clock_label.setAlignment(Qt.AlignCenter)
         self.clock_label.setFont(self.persian_font)
-        self.clock_label.setStyleSheet("color: #00E5FF; font-size: 28px; font-weight: bold;")
+        self.clock_label.setStyleSheet(f"color: #00E5FF; font-size: {s(26)}px; font-weight: bold;")
         title_layout.addWidget(self.clock_label)
 
         title_layout.addStretch()
 
         self.startup_btn = QPushButton("⚙️")
-        self.startup_btn.setFixedSize(35, 35)
-        self.startup_btn.setStyleSheet("background-color: transparent; color: #00E5FF; border-radius: 17px; font-size: 16px;")
+        self.startup_btn.setFixedSize(s(35), s(35))
+        self.startup_btn.setStyleSheet(f"background-color: transparent; color: #00E5FF; border-radius: {s(17)}px; font-size: {s(16)}px;")
         self.startup_btn.clicked.connect(self.ask_startup)
         title_layout.addWidget(self.startup_btn)
 
         close_btn = QPushButton("✕")
-        close_btn.setFixedSize(35, 35)
+        close_btn.setFixedSize(s(35), s(35))
         close_btn.setFont(self.persian_font)
-        close_btn.setStyleSheet("""
-            QPushButton {
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #ff4757;
                 color: white;
-                border-radius: 17px;
+                border-radius: {s(17)}px;
                 font-weight: bold;
-                font-size: 16px;
-            }
-            QPushButton:hover {
+                font-size: {s(16)}px;
+            }}
+            QPushButton:hover {{
                 background-color: #ff6b81;
-            }
+            }}
         """)
         close_btn.clicked.connect(self.hide_widget)
         title_layout.addWidget(close_btn)
@@ -687,77 +808,77 @@ class MainWidget(QMainWindow):
         self.date_label = QLabel(date_text)
         self.date_label.setAlignment(Qt.AlignCenter)
         self.date_label.setFont(self.persian_font)
-        self.date_label.setStyleSheet("""
+        self.date_label.setStyleSheet(f"""
             color: #FFFFFF;
-            font-size: 22px;
+            font-size: {s(20)}px;
             font-weight: bold;
-            margin: 8px;
+            margin: {s(6)}px;
         """)
         layout.addWidget(self.date_label)
 
         calendar_label = QLabel("تقویم ماه")
         calendar_label.setAlignment(Qt.AlignCenter)
         calendar_label.setFont(self.persian_font)
-        calendar_label.setStyleSheet("color: #00E5FF; font-size: 12px; font-weight: bold; margin-top: 2px;")
+        calendar_label.setStyleSheet(f"color: #00E5FF; font-size: {s(12)}px; font-weight: bold; margin-top: {s(2)}px;")
         layout.addWidget(calendar_label)
 
         self.calendar_widget = CalendarWidget(self.db, self.on_date_selected, self.on_today_clicked, self)
         layout.addWidget(self.calendar_widget)
 
         event_label = QLabel("مناسبت روز")
-        event_label.setStyleSheet("color: #00E5FF; font-size: 12px; font-weight: bold; margin-top: 5px;")
+        event_label.setStyleSheet(f"color: #00E5FF; font-size: {s(12)}px; font-weight: bold; margin-top: {s(5)}px;")
         layout.addWidget(event_label)
 
         self.event_box = QTextEdit()
         self.event_box.setPlaceholderText("با کلیک روی هر روز، مناسبت آن نمایش داده می‌شود...")
-        self.event_box.setMaximumHeight(60)
+        self.event_box.setMaximumHeight(s(60))
         self.event_box.setReadOnly(True)
-        self.event_box.setStyleSheet("""
-            QTextEdit {
+        self.event_box.setStyleSheet(f"""
+            QTextEdit {{
                 background-color: rgba(0, 0, 0, 60);
-                border-radius: 10px;
-                padding: 8px;
+                border-radius: {s(10)}px;
+                padding: {s(8)}px;
                 color: #cccccc;
-                font-size: 11px;
+                font-size: {s(11)}px;
                 border: none;
-            }
+            }}
         """)
         layout.addWidget(self.event_box)
 
         input_label = QLabel("تسک جدید")
         input_label.setFont(self.persian_font)
-        input_label.setStyleSheet("color: #00E5FF; font-size: 12px; font-weight: bold; margin-top: 5px;")
+        input_label.setStyleSheet(f"color: #00E5FF; font-size: {s(12)}px; font-weight: bold; margin-top: {s(5)}px;")
         layout.addWidget(input_label)
 
         input_layout = QHBoxLayout()
-        input_layout.setSpacing(6)
+        input_layout.setSpacing(s(6))
         
         self.task_input = QLineEdit()
         self.task_input.setPlaceholderText("متن تسک را وارد کنید...")
         self.task_input.setFont(self.persian_font)
-        self.task_input.setStyleSheet("""
-            QLineEdit {
+        self.task_input.setStyleSheet(f"""
+            QLineEdit {{
                 background-color: rgba(255,255,255,60);
-                border-radius: 20px;
-                padding: 8px 12px;
+                border-radius: {s(20)}px;
+                padding: {s(8)}px {s(12)}px;
                 color: white;
-                font-size: 12px;
+                font-size: {s(12)}px;
                 border: none;
-            }
+            }}
         """)
         self.task_input.returnPressed.connect(self.add_task)
         
         add_btn = QPushButton("اضافه کن")
-        add_btn.setFixedSize(80, 36)
+        add_btn.setFixedSize(s(85), s(36))
         add_btn.setFont(self.persian_font)
-        add_btn.setStyleSheet("""
-            QPushButton {
+        add_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #00E5FF;
                 color: #1a1a2e;
-                border-radius: 18px;
-                font-size: 11px;
+                border-radius: {s(18)}px;
+                font-size: {s(11)}px;
                 font-weight: bold;
-            }
+            }}
         """)
         add_btn.clicked.connect(self.add_task)
         
@@ -768,7 +889,7 @@ class MainWidget(QMainWindow):
         self.active_label = QLabel("📅 لیست کارهای امروز")
         self.active_label.setAlignment(Qt.AlignCenter)
         self.active_label.setFont(self.persian_font)
-        self.active_label.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: bold; margin-top: 5px;")
+        self.active_label.setStyleSheet(f"color: #FFFFFF; font-size: {s(12)}px; font-weight: bold; margin-top: {s(5)}px;")
         layout.addWidget(self.active_label)
 
         gregorian = self.current_jdate.togregorian()
@@ -784,27 +905,27 @@ class MainWidget(QMainWindow):
                 border: none;
             }
         """)
-        self.task_list.setMinimumHeight(120)
+        self.task_list.setMinimumHeight(s(100))
         layout.addWidget(self.task_list)
 
         deleted_header_layout = QHBoxLayout()
         deleted_label = QLabel("تسک‌های حذف شده")
         deleted_label.setFont(self.persian_font)
-        deleted_label.setStyleSheet("color: #ff6b6b; font-size: 11px; font-weight: bold;")
+        deleted_label.setStyleSheet(f"color: #ff6b6b; font-size: {s(11)}px; font-weight: bold;")
         deleted_header_layout.addWidget(deleted_label)
         deleted_header_layout.addStretch()
         
         self.clear_deleted_btn = QPushButton("حذف همه")
-        self.clear_deleted_btn.setFixedSize(85, 26)
+        self.clear_deleted_btn.setFixedSize(s(85), s(26))
         self.clear_deleted_btn.setFont(self.persian_font)
-        self.clear_deleted_btn.setStyleSheet("""
-            QPushButton {
+        self.clear_deleted_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: rgba(255, 107, 107, 80);
                 color: #ff6b6b;
-                border-radius: 13px;
-                font-size: 10px;
+                border-radius: {s(13)}px;
+                font-size: {s(10)}px;
                 font-weight: bold;
-            }
+            }}
         """)
         self.clear_deleted_btn.clicked.connect(self.clear_all_deleted_tasks)
         deleted_header_layout.addWidget(self.clear_deleted_btn)
@@ -812,23 +933,23 @@ class MainWidget(QMainWindow):
 
         self.deleted_list = QListWidget()
         self.deleted_list.setFont(self.persian_font)
-        self.deleted_list.setStyleSheet("""
-            QListWidget {
+        self.deleted_list.setStyleSheet(f"""
+            QListWidget {{
                 background-color: rgba(0, 0, 0, 80);
-                border-radius: 10px;
-                padding: 5px;
+                border-radius: {s(10)}px;
+                padding: {s(5)}px;
                 color: #cccccc;
-                font-size: 10px;
+                font-size: {s(10)}px;
                 border: none;
-            }
+            }}
         """)
-        self.deleted_list.setMaximumHeight(80)
+        self.deleted_list.setMaximumHeight(s(75))
         layout.addWidget(self.deleted_list)
 
         footer_label = QLabel("made by kamyar shishehgaran")
         footer_label.setAlignment(Qt.AlignCenter)
         footer_label.setFont(self.persian_font)
-        footer_label.setStyleSheet("color: rgba(255,255,255,40); font-size: 9px; margin-top: 5px;")
+        footer_label.setStyleSheet(f"color: rgba(255,255,255,40); font-size: {s(9)}px; margin-top: {s(4)}px;")
         layout.addWidget(footer_label)
 
         title_bar.mousePressEvent = self.start_move
@@ -951,8 +1072,14 @@ class MainWidget(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Qt باید DPI scaling ویندوز رو خودش هندل کنه
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    # مقداردهی اسکیل بعد از ساخت QApplication
+    _SCALE = get_scale_factor()
     window = MainWidget()
     window.show()
     sys.exit(app.exec())
